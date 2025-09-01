@@ -1,16 +1,22 @@
-# ROS2 build/colcon
+# ROS2 / colcon
 build/
 install/
 log/
 results/
 
-# VSCode settings
-.vscode/
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
 
-# Python cache
+# VSCode / IDE
+.vscode/
+.idea/
+
+# Pythonキャッシュ
 __pycache__/
 *.pyc
 
-# その他不要なファイル
+# その他
 *.swp
 *.tmp
