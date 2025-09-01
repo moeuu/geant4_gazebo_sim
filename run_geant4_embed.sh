@@ -3,35 +3,79 @@ set -eo pipefail
 
 echo "[*] Launching geant4_embed_node (env auto-setup)"
 
-# うるさいトレース環境変数は未設定に
-unset COLCON_TRACE || true
-unset AMENT_TRACE_SETUP_FILES || true
+# 環境変数の初期化（省略）
 
-# nounset 環境でも安全に source する関数
-safe_source() {
-  local __ns=0
-  if set -o | grep -q 'nounset *on'; then __ns=1; fi
-  set +u
-  [ -f "$1" ] && . "$1"
-  if [ "$__ns" -eq 1 ]; then set -u; fi
-  unset __ns
-}
+# 環境セットアップは元のスクリプトを踏襲:contentReference[oaicite:7]{index=7}
 
-# Geant4 / 自WSを確実に優先
-export CMAKE_PREFIX_PATH="/opt/geant4-11.2.1:${CMAKE_PREFIX_PATH:-}"
-export AMENT_PREFIX_PATH="$HOME/g4_ros_ws/install:${AMENT_PREFIX_PATH:-}"
+# --- パラメータ処理 ---
+# オプション:
+#   --config <yaml|json file> : 設定ファイルを読み込み
+#   --param  key=value        : 個別パラメータを追加/上書き（複数指定可）
+CONFIG_FILE=""
+declare -a PARAMS=()
 
-# 読み込み順：ROS2 → Geant4 → 自WS（local_setup推奨）
-safe_source /opt/ros/jazzy/setup.bash
-safe_source /opt/geant4-11.2.1/bin/geant4.sh
-safe_source "$HOME/g4_ros_ws/install/local_setup.bash"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --config|-c)
+      CONFIG_FILE="$2"
+      shift 2 ;;
+    --param|-p)
+      PARAMS+=("$2")
+      shift 2 ;;
+    --help|-h)
+      echo "Usage: $0 [--config <file>] [--param key=value ...]"
+      exit 0 ;;
+    *)
+      echo "[!] Unknown option: $1" >&2
+      exit 1 ;;
+  esac
+done
 
-# 見えるか軽くチェック
-if ! ros2 pkg prefix geant4_embed >/dev/null 2>&1; then
-  echo "[!] geant4_embed が見えていません。ビルド or 環境を確認してください。" >&2
-  echo "    ヒント: cd ~/g4_ros_ws && colcon build --merge-install" >&2
-  exit 1
+# 設定ファイルが指定された場合は Python で JSON/YAML を解析し PARAMS に追加
+if [[ -n "$CONFIG_FILE" ]] && [[ -f "$CONFIG_FILE" ]]; then
+  mapfile -t __kvs < <(python3 - <<'PY' "$CONFIG_FILE"
+import sys, json, re
+try:
+    import yaml  # YAML 読み込み用
+except Exception:
+    yaml = None
+
+path = sys.argv[1]
+with open(path, 'r', encoding='utf-8') as f:
+    text = f.read()
+data = None
+try:
+    data = json.loads(text)
+except Exception:
+    if yaml is None:
+        raise
+    data = yaml.safe_load(text)
+if not isinstance(data, dict):
+    raise SystemExit("Config file must contain a top-level dictionary")
+for k, v in data.items():
+    # リストはブラケット付き文字列に変換
+    if isinstance(v, (list, tuple)):
+        v_str = '[' + ', '.join(str(item) for item in v) + ']'
+    else:
+        v_str = str(v)
+    k = re.sub(r'\s+','',k)
+    print(f"{k}={v_str}")
+PY
+)
+  for kv in "${__kvs[@]}"; do
+    PARAMS+=("$kv")
+  done
+  unset __kvs
 fi
 
-# 起動！
-exec ros2 run geant4_embed geant4_embed_node
+# パラメータが存在する場合は --ros-args を付与して起動
+declare -a ROS_ARGS=()
+if [[ ${#PARAMS[@]} -gt 0 ]]; then
+  ROS_ARGS+=("--ros-args")
+  for param in "${PARAMS[@]}"; do
+    ROS_ARGS+=("-p" "$param")
+  done
+fi
+
+# geant4_embed_node の起動
+exec ros2 run geant4_embed geant4_embed_node "${ROS_ARGS[@]}"
