@@ -1,0 +1,9 @@
+robot_measurement_node:
+  ros__parameters:
+    waypoints_flat: [0.0,0.0, 1.0,0.0, 1.0,1.0]
+    rotation_angles: [0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0]
+    linear_speed: 0.40
+    angular_speed: 1.20
+    pos_tolerance: 0.25
+    measure_delay: 1.0
+    use_sim_time: true

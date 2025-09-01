@@ -27,6 +27,7 @@ add_executable(geant4_embed_node
   src/geant4/ActionInitialization.cc
   src/geant4/PrimaryGeneratorAction.cc
   src/geant4/EventAction.cc
+  src/geant4/Measurement.cpp    # 追加：測定用ファイル
 )
 
 target_link_libraries(geant4_embed_node
@@ -42,5 +43,4 @@ ament_target_dependencies(geant4_embed_node
 
 install(TARGETS geant4_embed_node
   DESTINATION lib/${PROJECT_NAME})
-
 ament_package()

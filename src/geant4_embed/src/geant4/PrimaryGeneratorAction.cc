@@ -1,10 +1,11 @@
 #include "PrimaryGeneratorAction.hh"
 #include "sim_shared.hpp"
+
 #include <G4ParticleGun.hh>
 #include <G4ParticleTable.hh>
 #include <G4SystemOfUnits.hh>
-#include <G4Event.hh>
 #include <G4ThreeVector.hh>
+#include <CLHEP/Units/SystemOfUnits.h>  // deg 等を使う場合はこちらでも可
 #include <cmath>
 #include <climits>
 
@@ -16,10 +17,10 @@ PrimaryGeneratorAction::PrimaryGeneratorAction()
   auto particle = G4ParticleTable::GetParticleTable()->FindParticle("geantino");
   fGun->SetParticleDefinition(particle);
 
-  // 初期値（GeneratePrimariesで毎回更新）
+  // 初期値（GeneratePrimaries で毎回更新）
   fGun->SetParticleEnergy(1.0 * MeV);
-  fGun->SetParticleMomentumDirection(G4ThreeVector(1., 0., 0.)); // +X 方向（yawで上書き）
-  fGun->SetParticlePosition(G4ThreeVector(0., 0., 0.));          // 薄板Si内から発射
+  fGun->SetParticleMomentumDirection(G4ThreeVector(1., 0., 0.)); // +X 方向（yaw で上書き）
+  fGun->SetParticlePosition(G4ThreeVector(0., 0., 0.));
 }
 
 PrimaryGeneratorAction::~PrimaryGeneratorAction()
@@ -50,12 +51,18 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event)
   if (!std::isfinite(eMeV) || eMeV < 0.0) eMeV = 0.0;
   fGun->SetParticleEnergy(eMeV * MeV);
 
-  // yaw[rad] → 方向ベクトル (cos, sin, 0)
+  // yaw [rad] → 方向ベクトル (cos, sin, 0)
   double yaw = g_yaw_rad.load(std::memory_order_relaxed);
   if (!std::isfinite(yaw)) yaw = 0.0;
   G4ThreeVector dir(std::cos(yaw), std::sin(yaw), 0.0);
   if (dir.mag2() < 1e-12) dir = G4ThreeVector(1., 0., 0.);
   fGun->SetParticleMomentumDirection(dir.unit());
+
+  // 線源位置 [m] を反映
+  double sx = g_source_x.load(std::memory_order_relaxed);
+  double sy = g_source_y.load(std::memory_order_relaxed);
+  double sz = g_source_z.load(std::memory_order_relaxed);
+  fGun->SetParticlePosition(G4ThreeVector(sx * m, sy * m, sz * m));
 
   // 発射
   fGun->GeneratePrimaryVertex(event);
