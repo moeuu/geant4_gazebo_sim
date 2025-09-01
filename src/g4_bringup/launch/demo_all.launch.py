@@ -61,8 +61,11 @@ def generate_launch_description():
     mode = LaunchConfiguration('mode')
 
     # ---- GZ_SIM_RESOURCE_PATH ----
+    # ここがポイント：g4_viz に加えて g4_bringup の share も通す
+    g4_bringup_share = get_package_share_directory('g4_bringup')
     existing_gz_path = os.environ.get('GZ_SIM_RESOURCE_PATH', '')
-    merged_gz_path = f"{g4_viz_share}:{existing_gz_path}" if existing_gz_path else g4_viz_share
+    add_paths = f"{g4_viz_share}:{g4_bringup_share}"
+    merged_gz_path = f"{add_paths}:{existing_gz_path}" if existing_gz_path else add_paths
     set_gz_env = SetEnvironmentVariable(name='GZ_SIM_RESOURCE_PATH', value=merged_gz_path)
 
     # ---- Gazebo 起動（headless/GUI）----
@@ -79,7 +82,7 @@ def generate_launch_description():
 
     # ---- diffbot 自動スポーン（world名は minimal 固定）----
     # 2秒待ってから /world/minimal/create に投げる
-    diffbot_sdf = os.path.join(get_package_share_directory('g4_bringup'), 'robots', 'diffbot.sdf')
+    diffbot_sdf = os.path.join(g4_bringup_share, 'robots', 'diffbot.sdf')
     spawn_diffbot_cmd = (
         f'gz service -s /world/minimal/create '
         f'--reqtype gz.msgs.EntityFactory --reptype gz.msgs.Boolean '
@@ -87,14 +90,10 @@ def generate_launch_description():
     )
     spawn_diffbot = TimerAction(
         period=2.0,
-        actions=[
-            ExecuteProcess(cmd=['bash', '-lc', spawn_diffbot_cmd], output='screen')
-        ]
+        actions=[ExecuteProcess(cmd=['bash', '-lc', spawn_diffbot_cmd], output='screen')]
     )
 
     # ---- ros_gz_bridge ----
-    # /model/diffbot/odometry_with_covariance -> /odom（GZ->ROS）
-    # /model/diffbot/cmd_vel <-> /cmd_vel（双方向）
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
@@ -127,25 +126,15 @@ def generate_launch_description():
     )
 
     # ---- 可視化（g4_viz）----
-    g4_viz_share = get_package_share_directory('g4_viz')
     include_plotter = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(g4_viz_share, 'launch', 'edep_plotter.launch.py')),
         condition=IfCondition(plot),
-        launch_arguments={
-            'edep_max': edep_max,
-            'csv_dir': csv_dir,
-            'topic': '/g4/edep',
-        }.items()
+        launch_arguments={'edep_max': edep_max, 'csv_dir': csv_dir, 'topic': '/g4/edep'}.items()
     )
     include_hist = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(g4_viz_share, 'launch', 'edep_hist.launch.py')),
         condition=IfCondition(hist),
-        launch_arguments={
-            'edep_max': edep_max,
-            'csv_dir': csv_dir,
-            'bins': '50',
-            'topic': '/g4/edep',
-        }.items()
+        launch_arguments={'edep_max': edep_max, 'csv_dir': csv_dir, 'bins': '50', 'topic': '/g4/edep'}.items()
     )
     include_grid = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(g4_viz_share, 'launch', 'edep_grid.launch.py')),

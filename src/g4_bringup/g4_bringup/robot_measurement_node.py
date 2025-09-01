@@ -5,20 +5,22 @@
 robot_measurement_node.py
 
 Gazebo上の移動ロボットを計測点へ移動させ、各点で遮蔽体角度を順に変えつつ
-Geant4側へ測定リクエスト（位置x,y,角度deg）を投げるノード。
+STEP2 の新インタフェース:
+  - /measurement_request (g4_interfaces/MeasurementRequest)
+  - /g4/measure          (g4_interfaces/Measurement サービス, 任意)
+を用いて計測をトリガするノード。
 
+動作:
 - /odom を購読して現在位置を取得
-- /cmd_vel を発行して移動
-- /measurement_request (Float32MultiArray) に [x, y, angle_deg] を出力
+- /cmd_vel を発行して waypoint へ移動
+- 各 waypoint 到着ごとに rotation_angles を順に回し、MeasurementRequest を publish
+- /g4/measure が立っていれば同内容でサービス呼び出し（非ブロッキング）
 
 Parameters
 ----------
-waypoints_yaml : str
-    "[[x,y],[x,y],...]" 形式の文字列。waypoints_flat が有効でない場合に使用。
-waypoints_flat : double[]
-    [x1,y1,x2,y2,...] の一次元配列。偶数長かつ2以上なら優先採用。
-rotation_angles : double[]
-    遮蔽体角度[deg] の配列。
+waypoints_yaml : str        "[[x,y],[x,y],...]" 形式（fallback）
+waypoints_flat : double[]   [x1,y1,x2,y2,...] の一次元（優先）
+rotation_angles : double[]  遮蔽体角度 [deg]
 linear_speed : double
 angular_speed : double
 pos_tolerance : double
@@ -26,10 +28,9 @@ measure_delay : double
 """
 
 import math
-import time
-from typing import List, Tuple
-
 import json
+from typing import List, Tuple, Optional
+
 try:
     import yaml  # optional
     _HAS_YAML = True
@@ -38,22 +39,24 @@ except Exception:
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, DurabilityPolicy
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
+from rclpy.duration import Duration
 
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, Point
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Float32MultiArray
+
+from g4_interfaces.msg import MeasurementRequest
+from g4_interfaces.srv import Measurement as MeasurementSrv
 
 
-def euler_from_quaternion(x, y, z, w) -> float:
-    """Convert quaternion (x, y, z, w) to yaw [rad]."""
+def euler_yaw_from_quat(x, y, z, w) -> float:
+    """Quaternion -> yaw [rad]."""
     siny_cosp = 2.0 * (w * z + x * y)
     cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
     return math.atan2(siny_cosp, cosy_cosp)
 
 
 def _parse_waypoints_yaml(s: str) -> List[Tuple[float, float]]:
-    """Parse waypoints from a YAML/JSON-like string: [[x,y],[x,y],...]."""
     if not s or not isinstance(s, str):
         return [(0.0, 0.0)]
     obj = None
@@ -78,7 +81,6 @@ def _parse_waypoints_yaml(s: str) -> List[Tuple[float, float]]:
 
 
 def _parse_waypoints_flat(arr) -> List[Tuple[float, float]]:
-    """Parse waypoints from a flat list [x1,y1,x2,y2,...]."""
     out: List[Tuple[float, float]] = []
     if not isinstance(arr, (list, tuple)) or len(arr) < 2 or (len(arr) % 2) != 0:
         return out
@@ -91,134 +93,182 @@ def _parse_waypoints_flat(arr) -> List[Tuple[float, float]]:
 
 
 class RobotMeasurementNode(Node):
-    """Node controlling robot movement and measurement triggering."""
-
     def __init__(self):
         super().__init__('robot_measurement_node')
-        # ParameterDescriptorは使わず、デフォルトで型を確定させる
+
+        # ---- Parameters ----
         self.declare_parameter('waypoints_yaml', '[[0.0, 0.0]]')
-        # 空配列だとBYTE_ARRAYに推定されるため、double配列っぽい初期値にする
         self.declare_parameter('waypoints_flat', [0.0, 0.0])
-        self.declare_parameter('rotation_angles', [0.0, 90.0, 180.0, 270.0])
+        self.declare_parameter('rotation_angles', [0.0, 90.0, 180.0, 270.0])  # deg
         self.declare_parameter('linear_speed', 0.5)
         self.declare_parameter('angular_speed', 1.0)
         self.declare_parameter('pos_tolerance', 0.05)
         self.declare_parameter('measure_delay', 2.0)
+        # ★ use_sim_time は Jazzy で既に宣言済みの場合があるため、ここでは宣言しない
 
-        # Get parameters
         waypoints_yaml = self.get_parameter('waypoints_yaml').value
         waypoints_flat = self.get_parameter('waypoints_flat').value
+        rotation_angles_deg = [float(a) for a in self.get_parameter('rotation_angles').value]
 
-        # Prefer flat if valid, else parse yaml
-        wps = _parse_waypoints_flat(waypoints_flat)
-        if not wps:
-            wps = _parse_waypoints_yaml(waypoints_yaml)
-
-        self.waypoints: List[Tuple[float, float]] = wps
-        self.rotation_angles: List[float] = [float(a) for a in self.get_parameter('rotation_angles').value]
+        self.waypoints: List[Tuple[float, float]] = _parse_waypoints_flat(waypoints_flat) or _parse_waypoints_yaml(waypoints_yaml)
+        self.rot_deg: List[float] = rotation_angles_deg
         self.linear_speed: float = float(self.get_parameter('linear_speed').value)
         self.angular_speed: float = float(self.get_parameter('angular_speed').value)
-        self.pos_tolerance: float = float(self.get_parameter('pos_tolerance').value)
+        self.pos_tol: float = float(self.get_parameter('pos_tolerance').value)
         self.measure_delay: float = float(self.get_parameter('measure_delay').value)
 
-        # Publishers
-        self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
-        qos_profile = QoSProfile(depth=10)
-        qos_profile.durability = DurabilityPolicy.TRANSIENT_LOCAL
-        self.measure_pub = self.create_publisher(Float32MultiArray, '/measurement_request', qos_profile)
+        # ---- QoS ----
+        qos = QoSProfile(depth=10)
+        qos.reliability = ReliabilityPolicy.RELIABLE
+        qos.history = HistoryPolicy.KEEP_LAST
 
-        # Subscriber
-        self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
+        # ---- Pubs/Subs ----
+        self.pub_cmd = self.create_publisher(Twist, '/cmd_vel', qos)
+        self.sub_odom = self.create_subscription(Odometry, '/odom', self._on_odom, qos)
 
-        # Internal state
-        self.current_pose = None  # type: Odometry | None
-        self.waypoint_index = 0
-        self.rotation_index = 0
-        self.state = 'move'  # 'move', 'measure', 'wait'
-        self.last_measurement_time = 0.0
+        # MeasurementRequest を流す
+        meas_qos = QoSProfile(depth=10)
+        meas_qos.reliability = ReliabilityPolicy.RELIABLE
+        meas_qos.history = HistoryPolicy.KEEP_LAST
+        meas_qos.durability = DurabilityPolicy.VOLATILE
+        self.pub_meas_req = self.create_publisher(MeasurementRequest, '/measurement_request', meas_qos)
 
-        self.timer = self.create_timer(0.1, self.timer_callback)
-        self.get_logger().info(f'RobotMeasurementNode initialized. waypoints={self.waypoints}, angles={self.rotation_angles}')
+        # /g4/measure サービス（あれば叩く）
+        self.cli_measure = self.create_client(MeasurementSrv, '/g4/measure')
 
-    def odom_callback(self, msg: Odometry):
-        self.current_pose = msg
+        # ---- State ----
+        self.current_odom: Optional[Odometry] = None
+        self.idx_wp = 0
+        self.idx_rot = 0
+        self.state = 'MOVE' if self.waypoints else 'DONE'
+        self.last_measure_t = self.get_clock().now()
 
-    def publish_twist(self, linear: float, angular: float):
-        twist = Twist()
-        twist.linear.x = linear
-        twist.angular.z = angular
-        self.cmd_pub.publish(twist)
+        self.get_logger().info(
+            f'waypoints={self.waypoints}, rotation_angles(deg)={self.rot_deg}, '
+            f'linear={self.linear_speed}, angular={self.angular_speed}, tol={self.pos_tol}'
+        )
 
-    def publish_measurement_request(self, x: float, y: float, angle_deg: float):
-        msg = Float32MultiArray()
-        msg.data = [float(x), float(y), float(angle_deg)]
-        self.measure_pub.publish(msg)
-        self.get_logger().info(f'MEAS REQ: x={x:.2f}, y={y:.2f}, angle={angle_deg:.1f} deg')
+        self.timer = self.create_timer(0.05, self._loop)
 
-    def compute_control(self, goal_x: float, goal_y: float):
-        if self.current_pose is None:
-            return 0.0, 0.0
-        p = self.current_pose.pose.pose.position
-        x, y = p.x, p.y
-        q = self.current_pose.pose.pose.orientation
-        yaw = euler_from_quaternion(q.x, q.y, q.z, q.w)
+    # ---------------- Callbacks / Loop ----------------
+    def _on_odom(self, msg: Odometry) -> None:
+        self.current_odom = msg
 
-        dx, dy = goal_x - x, goal_y - y
-        angle_to_goal = math.atan2(dy, dx)
-        angle_diff = self._normalize_angle(angle_to_goal - yaw)
-
-        linear_vel = self.linear_speed if abs(angle_diff) < 0.2 else 0.0
-        angular_vel = max(min(self.angular_speed * angle_diff, self.angular_speed), -self.angular_speed)
-        return linear_vel, angular_vel
-
-    def _normalize_angle(self, angle: float) -> float:
-        while angle > math.pi:
-            angle -= 2.0 * math.pi
-        while angle < -math.pi:
-            angle += 2.0 * math.pi
-        return angle
-
-    def has_reached_waypoint(self, goal_x: float, goal_y: float) -> bool:
-        if self.current_pose is None:
-            return False
-        p = self.current_pose.pose.pose.position
-        return math.hypot(goal_x - p.x, goal_y - p.y) < self.pos_tolerance
-
-    def timer_callback(self):
-        if not self.waypoints or self.waypoint_index >= len(self.waypoints):
-            self.publish_twist(0.0, 0.0)
+    def _loop(self) -> None:
+        if self.state == 'DONE':
+            self._stop()
+            return
+        if self.current_odom is None:
             return
 
-        goal_x, goal_y = self.waypoints[self.waypoint_index]
+        if self.state == 'MOVE':
+            self._do_move()
+        elif self.state == 'MEASURE':
+            self._do_measure()
 
-        if self.state == 'move':
-            if self.has_reached_waypoint(goal_x, goal_y):
-                self.publish_twist(0.0, 0.0)
-                self.rotation_index = 0
-                self.state = 'measure'
-                self.get_logger().info(f'Reached waypoint {self.waypoint_index}: ({goal_x:.2f}, {goal_y:.2f})')
-            else:
-                lin, ang = self.compute_control(goal_x, goal_y)
-                self.publish_twist(lin, ang)
+    # ---------------- Motion ----------------
+    def _do_move(self) -> None:
+        gx, gy = self.waypoints[self.idx_wp]
+        x = self.current_odom.pose.pose.position.x
+        y = self.current_odom.pose.pose.position.y
 
-        elif self.state == 'measure':
-            angle_deg = self.rotation_angles[self.rotation_index]
-            if self.current_pose is not None:
-                p = self.current_pose.pose.pose.position
-                self.publish_measurement_request(p.x, p.y, angle_deg)
-            else:
-                self.publish_measurement_request(goal_x, goal_y, angle_deg)
-            self.last_measurement_time = time.time()
-            self.state = 'wait'
+        dx = gx - x
+        dy = gy - y
+        dist = math.hypot(dx, dy)
 
-        elif self.state == 'wait':
-            if (time.time() - self.last_measurement_time) >= self.measure_delay:
-                self.rotation_index += 1
-                if self.rotation_index < len(self.rotation_angles):
-                    self.state = 'measure'
-                else:
-                    self.waypoint_index += 1
-                    self.state = 'move'
+        cmd = Twist()
+        if dist > self.pos_tol:
+            yaw = euler_yaw_from_quat(
+                self.current_odom.pose.pose.orientation.x,
+                self.current_odom.pose.pose.orientation.y,
+                self.current_odom.pose.pose.orientation.z,
+                self.current_odom.pose.pose.orientation.w,
+            )
+            desired = math.atan2(dy, dx)
+            yaw_err = self._wrap(desired - yaw)
+            cmd.linear.x = max(min(self.linear_speed, dist), 0.0)
+            cmd.angular.z = max(min(self.angular_speed, yaw_err), -self.angular_speed)
+            self.pub_cmd.publish(cmd)
+        else:
+            self._stop()
+            self.idx_rot = 0
+            self.state = 'MEASURE'
+            self.last_measure_t = self.get_clock().now()
+            self.get_logger().info(f'Arrived at waypoint {self.idx_wp}/{len(self.waypoints)-1}. Start MEASURE.')
+
+    def _stop(self) -> None:
+        self.pub_cmd.publish(Twist())
+
+    # ---------------- Measurement ----------------
+    def _do_measure(self) -> None:
+        now = self.get_clock().now()
+        if (now - self.last_measure_t) < Duration(seconds=self.measure_delay):
+            return
+
+        if self.idx_rot >= len(self.rot_deg):
+            self.idx_wp += 1
+            if self.idx_wp >= len(self.waypoints):
+                self.get_logger().info('All waypoints completed. DONE.')
+                self.state = 'DONE'
+                return
+            self.state = 'MOVE'
+            self.get_logger().info(f'Move to next waypoint {self.idx_wp}')
+            return
+
+        # 角度[deg] → [rad]（STEP2の msg はラジアン）
+        rot_deg = float(self.rot_deg[self.idx_rot])
+        rot_rad = math.radians(rot_deg)
+
+        # MeasurementRequest を publish
+        req = MeasurementRequest()
+        req.stamp = now.to_msg()
+
+        # 検出器位置は現在位置（Z=0 基準）
+        p = Point()
+        p.x = self.current_odom.pose.pose.position.x
+        p.y = self.current_odom.pose.pose.position.y
+        p.z = 0.0
+        req.detector_position = p
+
+        req.shield_rotation_angle = rot_rad
+
+        # 3D_estimation 互換の仮の線源 [x,y,z,q]
+        req.source_parameters = [3.5, 3.5, 0.8, 100.0]
+
+        self.pub_meas_req.publish(req)
+        self.get_logger().info(
+            f'Publish MeasurementRequest: pos=({p.x:.2f},{p.y:.2f}), rot={rot_deg:.1f} deg'
+        )
+
+        # サービスがあれば即時に呼ぶ（非ブロッキング）
+        if self.cli_measure.service_is_ready():
+            srv_req = MeasurementSrv.Request()
+            srv_req.request = req
+            future = self.cli_measure.call_async(srv_req)
+
+            def _done(_):
+                try:
+                    res = future.result()
+                    if res is not None:
+                        self.get_logger().info(
+                            f'/g4/measure -> counts={res.result.counts:.3f}, noise={res.result.noise:.3f}'
+                        )
+                except Exception as e:
+                    self.get_logger().warn(f'/g4/measure call failed: {e!r}')
+
+            future.add_done_callback(_done)
+
+        self.idx_rot += 1
+        self.last_measure_t = now
+
+    # ---------------- Helpers ----------------
+    @staticmethod
+    def _wrap(a: float) -> float:
+        while a > math.pi:
+            a -= 2.0 * math.pi
+        while a < -math.pi:
+            a += 2.0 * math.pi
+        return a
 
 
 def main(args=None):
@@ -229,7 +279,7 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        node.publish_twist(0.0, 0.0)
+        node._stop()
         node.destroy_node()
         rclpy.shutdown()
 

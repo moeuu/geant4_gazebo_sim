@@ -1,0 +1,5 @@
+## Measurement.srv
+# 要求としてMeasurementRequestを受け取り，応答でMeasurementResultを返す
+g4_interfaces/MeasurementRequest request
+---
+g4_interfaces/MeasurementResult result
