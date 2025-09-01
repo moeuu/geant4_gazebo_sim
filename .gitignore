@@ -1,0 +1,16 @@
+# ROS2 build/colcon
+build/
+install/
+log/
+results/
+
+# VSCode settings
+.vscode/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# その他不要なファイル
+*.swp
+*.tmp

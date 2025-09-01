@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>geant4_embed</name>
+  <version>0.0.1</version>
+  <description>Embed ROS 2 (rclcpp) into a Geant4 application and subscribe /odom.</description>
+  <maintainer email="you@example.com">YourName</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+
+  <exec_depend>geant4</exec_depend>
+</package>
