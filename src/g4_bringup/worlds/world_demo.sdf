@@ -1,16 +1,17 @@
 <?xml version="1.0"?>
 <sdf version="1.9">
-  <world name="world_demo">
-    <!-- 見やすさ向上（真っ黒対策） -->
+  <world name="minimal">
+    <!-- 環境光などを設定 -->
     <scene>
       <ambient>0.6 0.6 0.6 1</ambient>
       <background>0.8 0.8 0.85 1</background>
       <shadows>true</shadows>
     </scene>
 
+    <!-- 重力 -->
     <gravity>0 0 -9.81</gravity>
 
-    <!-- sun 相当の平行光 -->
+    <!-- 平行光源 -->
     <light type="directional" name="sun">
       <cast_shadows>true</cast_shadows>
       <direction>-0.4 0.3 -1</direction>
@@ -24,21 +25,21 @@
       </attenuation>
     </light>
 
-    <!-- OBJ メッシュ（visual / collision） -->
+    <!-- world_demo.obj を読み込むモデル -->
     <model name="world_demo_mesh">
       <static>true</static>
-      <!-- 部屋の高さが10m想定：原点が中心なら z=5 に持ち上げておく -->
-      <pose>0 0 0.1 0 0 0</pose>
+      <!-- 部屋の高さ10 mの中心が原点なので z=5 m に持ち上げる -->
+      <pose>0 0 5 0 0 0</pose>
       <link name="mesh_link">
         <visual name="mesh_vis">
           <geometry>
             <mesh>
+              <!-- OBJ ファイルへの絶対パス -->
               <uri>file:///home/morita/g4_ros_ws/src/g4_bringup/worlds/world_demo.obj</uri>
-              <!-- いまの設定（1000）を維持。※単位がmmなら本来は 0.001 が正（後述） -->
               <scale>1 1 1</scale>
             </mesh>
           </geometry>
-          <!-- MTL/テクスチャ無しでも見えるよう色を設定 -->
+          <!-- テクスチャなしでも見えるように色を付ける -->
           <material>
             <ambient>0.2 0.6 0.9 1</ambient>
             <diffuse>0.2 0.6 0.9 1</diffuse>
@@ -46,6 +47,7 @@
           </material>
           <cast_shadows>true</cast_shadows>
         </visual>
+        <!-- 衝突形状も同じメッシュを使う -->
         <collision name="mesh_col">
           <geometry>
             <mesh>
@@ -56,6 +58,5 @@
         </collision>
       </link>
     </model>
-
   </world>
 </sdf>
