@@ -25,6 +25,13 @@ linear_speed : double
 angular_speed : double
 pos_tolerance : double
 measure_delay : double
+
+本実装では遮蔽体を 1/8 球殻としてモデル化し、
+全方向をカバーするため Z 軸回り 0,90,180,270 度と Y 軸回り 0,180 度の
+組合せ全8通りをデフォルトの rotation_angles に設定している。
+rotation_angles の各値は deg 表記だが、360 度以上の値は
+360 度を引いた角度で Z 軸回転し、引いた回数 1 回につき Y 軸回転 180 度を追加
+することで裏表を切り替えるために利用する（DetectorConstruction.cc の実装参照）。
 """
 
 import math
@@ -97,9 +104,10 @@ class RobotMeasurementNode(Node):
         super().__init__('robot_measurement_node')
 
         # ---- Parameters ----
-        self.declare_parameter('waypoints_yaml', '[[0.0, 0.0]]')
-        self.declare_parameter('waypoints_flat', [0.0, 0.0])
-        self.declare_parameter('rotation_angles', [0.0, 90.0, 180.0, 270.0])  # deg
+        self.declare_parameter('waypoints_yaml', '')   # ← 空文字
+        self.declare_parameter('waypoints_flat', [])   # ← 空リスト
+        self.declare_parameter('rotation_angles', [])  # ← 空リスト
+
         self.declare_parameter('linear_speed', 0.5)
         self.declare_parameter('angular_speed', 1.0)
         self.declare_parameter('pos_tolerance', 0.05)

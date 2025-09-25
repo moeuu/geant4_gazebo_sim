@@ -2,24 +2,20 @@
 # -*- coding: utf-8 -*-
 
 """
-measurement_bringup.launch.py  (final)
+measurement_bringup.launch.py  (autonomy-safe, ROS->GZ one-way cmd_vel)
 
 Gazebo（サーバ/GUI）+ DiffBotスポーン + ros_gz_bridge +
-Geant4埋め込みノード + ロボット計測ノード + 可視化(g4_viz) を一括起動。
+Geant4埋め込みノード + （任意）ロボット計測ノード + 可視化(g4_viz) を一括起動。
 
-型安全:
-- source.position / detector.position は list[float] で渡す（geant4_embed が double_array を要求）
-- waypoints_yaml は与えたときだけ「文字列」で渡す
-- waypoints_flat / rotation_angles は与えたときだけ list[float] に変換して渡す
-
-/odom が出ない問題に対応:
-- ブリッジを /model/diffbot/odometry (gz.msgs.Odometry) に対応
-- 併せて /model/diffbot/odometry_with_covariance も接続（存在すれば同時に /odom に流す）
+ポイント：
+- enable_autonomy=false なら robot_measurement_node を起動しない（teleop専用）
+- enable_autonomy=true なら robot_measurement_node の /cmd_vel を /cmd_vel_auto にリマップ
+- /cmd_vel ブリッジは ROS→GZ 片方向のみ（']' を使用）
 """
 
 import os
 import ast
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 
 from launch import LaunchDescription
 from launch.actions import (
@@ -49,22 +45,37 @@ def _as_float(s: str) -> float:
     return float(str(s).strip())
 
 def _parse_float_list_str(s: str) -> Optional[List[float]]:
-    """空文字は None、非空は "[1,2,...]" を list[float] にして返す"""
+    """空文字は None、非空は JSON/リテラルを list[float] にして返す（tuple→list 変換含む）"""
     if s is None:
         return None
     s = s.strip()
     if s == "":
         return None
-    arr = ast.literal_eval(s)  # 安全なリテラル評価
+    arr = ast.literal_eval(s)
+    if isinstance(arr, tuple):
+        arr = list(arr)
+    if isinstance(arr, (int, float)):
+        return [float(arr)]
     if not isinstance(arr, list):
         raise ValueError("expected JSON-like list string, e.g. [1.0,2.0,3.0]")
     return [float(x) for x in arr]
+
+def _sanitize_params(v: Any) -> Any:
+    """parameters に渡す前の最終サニタイズ（tuple→list, 再帰）。"""
+    if isinstance(v, tuple):
+        return [_sanitize_params(x) for x in list(v)]
+    if isinstance(v, list):
+        return [_sanitize_params(x) for x in v]
+    if isinstance(v, dict):
+        return {k: _sanitize_params(val) for k, val in v.items()}
+    if isinstance(v, (str, int, float, bool, bytes)):
+        return v
+    return str(v)
 
 
 # ---------- opaque setup ----------
 
 def _opaque_setup(context, *args, **kwargs):
-    g4_viz_share     = get_package_share_directory('g4_viz')
     g4_bringup_share = get_package_share_directory('g4_bringup')
 
     def LC(name: str) -> str:
@@ -72,7 +83,6 @@ def _opaque_setup(context, *args, **kwargs):
 
     # Gazebo
     world    = LC('world')
-    headless = LC('headless')
     gz_server = ExecuteProcess(
         cmd=['gz', 'sim', '-r', '-s', '-v', '4', world],
         output='screen',
@@ -103,7 +113,8 @@ def _opaque_setup(context, *args, **kwargs):
     )
 
     # ros_gz_bridge
-    #   - odometry（非 covariance）と odometry_with_covariance の両方に対応
+    # GZ->ROS: /clock, /tf, /odometry は '[' で片方向
+    # ROS->GZ: /cmd_vel は ']' で片方向
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
@@ -112,27 +123,23 @@ def _opaque_setup(context, *args, **kwargs):
         arguments=[
             '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
             '/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V',
-
-            # Odometry（非 covariance）
             '/model/diffbot/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
-
-            # 存在する環境ではこちらを使う場合もある
             '/model/diffbot/odometry_with_covariance@nav_msgs/msg/Odometry[gz.msgs.OdometryWithCovariance',
-
-            # cmd_vel
-            '/model/diffbot/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
+            # ★ ここを双方向(@@)ではなく ROS->GZ 片方向(])に変更
+            '/model/diffbot/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
         ],
         remappings=[
+            # ROS 側では /cmd_vel に集約（teleop が出すトピック名）
+            ('/model/diffbot/cmd_vel', '/cmd_vel'),
             ('/model/diffbot/odometry', '/odom'),
             ('/model/diffbot/odometry_with_covariance', '/odom'),
-            ('/model/diffbot/cmd_vel', '/cmd_vel'),
         ],
     )
 
-    # Geant4 パラメータ（型整形）
+    # Geant4 パラメータ
     src_pos = _parse_float_list_str(LC('source_position')) or [0.0, 0.0, 0.0]
     det_pos = _parse_float_list_str(LC('detector_position')) or [0.0, 0.0, 0.0]
-    g4_params = {
+    g4_params: Dict[str, Any] = {
         'use_sim_time'             : True,
         'source.position'          : src_pos,
         'source.intensity'         : _as_float(LC('source_intensity')),
@@ -145,6 +152,8 @@ def _opaque_setup(context, *args, **kwargs):
         'energy.scale_mev_per_mps' : _as_float(LC('energy_scale_mev_per_mps')),
         'energy.max_mev'           : _as_float(LC('energy_max_mev')),
     }
+    g4_params = _sanitize_params(g4_params)
+
     geant4_node = Node(
         package='geant4_embed',
         executable='geant4_embed_node',
@@ -153,33 +162,40 @@ def _opaque_setup(context, *args, **kwargs):
         parameters=[g4_params],
     )
 
-    # ロボット計測ノード（空文字は渡さない、与える時だけ正しい型）
-    rm_params = {
-        'use_sim_time' : True,
-        'linear_speed' : _as_float(LC('linear_speed')),
-        'angular_speed': _as_float(LC('angular_speed')),
-        'pos_tolerance': _as_float(LC('pos_tolerance')),
-        'measure_delay': _as_float(LC('measure_delay')),
-    }
-    wp_yaml = LC('waypoints_yaml').strip()
-    if wp_yaml != '':
-        rm_params['waypoints_yaml'] = wp_yaml
-    wp_flat = _parse_float_list_str(LC('waypoints_flat'))
-    if wp_flat is not None:
-        rm_params['waypoints_flat'] = wp_flat
-    rot = _parse_float_list_str(LC('rotation_angles'))
-    if rot is not None:
-        rm_params['rotation_angles'] = rot
+    nodes = [gz_server, gz_gui, spawn_diffbot, bridge, geant4_node]
 
-    robot_measure_node = Node(
-        package='g4_bringup',
-        executable='robot_measurement_node',
-        name='robot_measurement_node',
-        output='screen',
-        parameters=[rm_params],
-    )
+    # （任意）ロボット計測ノード（自律時のみ起動。/cmd_vel→/cmd_vel_auto に隔離）
+    if _as_bool(LC('enable_autonomy')):
+        rm_params: Dict[str, Any] = {
+            'use_sim_time' : True,
+            'linear_speed' : _as_float(LC('linear_speed')),
+            'angular_speed': _as_float(LC('angular_speed')),
+            'pos_tolerance': _as_float(LC('pos_tolerance')),
+            'measure_delay': _as_float(LC('measure_delay')),
+        }
+        wp_yaml = LC('waypoints_yaml')
+        if isinstance(wp_yaml, str) and wp_yaml.strip() != '':
+            rm_params['waypoints_yaml'] = wp_yaml.strip()
+        wp_flat = _parse_float_list_str(LC('waypoints_flat'))
+        if wp_flat:
+            rm_params['waypoints_flat'] = wp_flat
+        rot = _parse_float_list_str(LC('rotation_angles'))
+        if rot:
+            rm_params['rotation_angles'] = rot
+        rm_params = _sanitize_params(rm_params)
+
+        robot_measure_node = Node(
+            package='g4_bringup',
+            executable='robot_measurement_node',
+            name='robot_measurement_node',
+            output='screen',
+            parameters=[rm_params],
+            remappings=[('/cmd_vel', '/cmd_vel_auto')],
+        )
+        nodes.append(robot_measure_node)
 
     # 可視化(g4_viz)
+    g4_viz_share = get_package_share_directory('g4_viz')
     edep_plotter = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(g4_viz_share, 'launch', 'edep_plotter.launch.py')),
         condition=IfCondition(LaunchConfiguration('plot')),
@@ -215,27 +231,20 @@ def _opaque_setup(context, *args, **kwargs):
         }.items(),
     )
 
-    return [
-        gz_server, gz_gui,
-        spawn_diffbot,
-        bridge,
-        geant4_node,
-        robot_measure_node,
-        edep_plotter, edep_hist, edep_grid,
-    ]
+    nodes += [edep_plotter, edep_hist, edep_grid]
+    return nodes
 
 
 # ---------- main LaunchDescription ----------
 
 def generate_launch_description() -> LaunchDescription:
-    g4_viz_share     = get_package_share_directory('g4_viz')
     g4_bringup_share = get_package_share_directory('g4_bringup')
-
-    default_world = os.path.join(g4_viz_share, 'worlds', 'minimal.sdf')
+    default_world = os.path.join(g4_bringup_share, 'worlds', 'minimal.sdf')
 
     # 基本
     world_arg    = _arg('world', default_world, 'SDF world file')
     headless_arg = _arg('headless', 'true', 'true: server only, false: GUI')
+    autonomy_arg = _arg('enable_autonomy', 'false', 'start robot_measurement_node')
 
     # Geant4
     src_pos_arg  = _arg('source_position', '[0.0, 0.0, 0.0]', 'source [x,y,z] as JSON list')
@@ -259,31 +268,29 @@ def generate_launch_description() -> LaunchDescription:
     del_arg      = _arg('measure_delay', '2.0', 'measure delay [s]')
 
     # 可視化
-    edep_max_arg = _arg('edep_max', '1.0', 'Edep visualize upper bound')
-    plot_arg     = _arg('plot', 'true', 'enable plotter')
-    hist_arg     = _arg('hist', 'true', 'enable histogram')
-    grid_arg     = _arg('grid', 'true', 'enable occupancy grid')
-    csv_dir_arg  = _arg('csv_dir', os.path.join(os.environ.get('HOME',''), 'g4_ros_ws', 'results'), 'CSV output dir')
-    res_arg      = _arg('resolution_m', '0.25', 'grid resolution [m]')
-    rng_arg      = _arg('range_m', '10.0', 'grid range [m]')
-    dec_arg      = _arg('decay_alpha', '1.0', 'grid decay alpha')
-    mode_arg     = _arg('mode', 'sum', 'grid mode (sum|max)')
-
-    # GZ リソースパス
+    from ament_index_python.packages import get_package_share_directory as gpsd
+    g4_viz_share = gpsd('g4_viz')
     existing = os.environ.get('GZ_SIM_RESOURCE_PATH', '')
     add_paths = f"{g4_viz_share}:{g4_bringup_share}"
     merged = f"{add_paths}:{existing}" if existing else add_paths
     set_gz_env = SetEnvironmentVariable(name='GZ_SIM_RESOURCE_PATH', value=merged)
 
     return LaunchDescription([
-        world_arg, headless_arg,
+        world_arg, headless_arg, autonomy_arg,
         src_pos_arg, src_int_arg, det_pos_arg, shield_arg,
         noise_en_arg, noise_st_arg, particle_arg,
         e_off_arg, e_scl_arg, e_max_arg,
         wp_yaml_arg, wp_flat_arg, rot_arg,
         lin_arg, ang_arg, tol_arg, del_arg,
-        edep_max_arg, plot_arg, hist_arg, grid_arg,
-        csv_dir_arg, res_arg, rng_arg, dec_arg, mode_arg,
+        edep_max_arg := _arg('edep_max', '1.0', 'Edep visualize upper bound'),
+        plot_arg     := _arg('plot', 'true', 'enable plotter'),
+        hist_arg     := _arg('hist', 'true', 'enable histogram'),
+        grid_arg     := _arg('grid', 'true', 'enable occupancy grid'),
+        csv_dir_arg  := _arg('csv_dir', os.path.join(os.environ.get('HOME',''), 'g4_ros_ws', 'results'), 'CSV output dir'),
+        res_arg      := _arg('resolution_m', '0.25', 'grid resolution [m]'),
+        rng_arg      := _arg('range_m', '10.0', 'grid range [m]'),
+        dec_arg      := _arg('decay_alpha', '1.0', 'grid decay alpha'),
+        mode_arg     := _arg('mode', 'sum', 'grid mode (sum|max)'),
         set_gz_env,
         OpaqueFunction(function=_opaque_setup),
     ])

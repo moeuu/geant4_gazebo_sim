@@ -3,9 +3,9 @@
   <model name="diffbot">
     <pose>0 0 0.05 0 0 0</pose>
 
-    <!-- ベースリンク -->
+    <!-- base: 底が地面に触れないよう中心を z=0.16 に上げる（底=0.06m） -->
     <link name="base_link">
-      <pose>0 0 0.1 0 0 0</pose>
+      <pose>0 0 0.16 0 0 0</pose>
       <inertial>
         <mass>5.0</mass>
         <inertia>
@@ -19,24 +19,68 @@
       </collision>
       <visual name="base_vis">
         <geometry><box><size>0.4 0.3 0.2</size></box></geometry>
-        <material><ambient>0.2 0.6 0.8 1</ambient></material>
+        <!-- 白 -->
+        <material>
+          <ambient>0.9 0.9 0.9 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+          <emissive>0.02 0.02 0.02 1</emissive>
+          <pbr><metal><albedo>1 1 1 1</albedo><metalness>0.0</metalness><roughness>0.4</roughness></metal></pbr>
+        </material>
       </visual>
     </link>
 
-    <!-- 左右ホイール -->
+    <!-- left wheel（リンクは回転させず、ジオメトリだけ roll=90°） -->
     <link name="left_wheel">
-      <pose>0 0.15 0.05 0 1.5707 0</pose>
-      <inertial><mass>0.5</mass><inertia><ixx>0.001</ixx><iyy>0.001</iyy><izz>0.001</izz></inertia></inertial>
-      <collision name="col"><geometry><cylinder><radius>0.05</radius><length>0.02</length></cylinder></geometry></collision>
-      <visual name="vis"><geometry><cylinder><radius>0.05</radius><length>0.02</length></cylinder></geometry></visual>
+      <pose>0 0.15 0.05 0 0 0</pose>
+      <inertial>
+        <mass>0.5</mass>
+        <inertia><ixx>0.001</ixx><iyy>0.001</iyy><izz>0.001</izz></inertia>
+      </inertial>
+      <collision name="col">
+        <pose>0 0 0 1.5707 0 0</pose> <!-- Z→Y -->
+        <geometry><cylinder><radius>0.05</radius><length>0.02</length></cylinder></geometry>
+        <surface><friction><ode><mu>1.2</mu><mu2>1.2</mu2></ode></friction></surface>
+      </collision>
+      <visual name="vis">
+        <pose>0 0 0 1.5707 0 0</pose>
+        <geometry><cylinder><radius>0.05</radius><length>0.02</length></cylinder></geometry>
+        <material>
+          <ambient>0.9 0.9 0.9 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+          <emissive>0.02 0.02 0.02 1</emissive>
+          <pbr><metal><albedo>1 1 1 1</albedo><metalness>0.0</metalness><roughness>0.4</roughness></metal></pbr>
+        </material>
+      </visual>
     </link>
+
+    <!-- right wheel -->
     <link name="right_wheel">
-      <pose>0 -0.15 0.05 0 1.5707 0</pose>
-      <inertial><mass>0.5</mass><inertia><ixx>0.001</ixx><iyy>0.001</iyy><izz>0.001</izz></inertia></inertial>
-      <collision name="col"><geometry><cylinder><radius>0.05</radius><length>0.02</length></cylinder></geometry></collision>
-      <visual name="vis"><geometry><cylinder><radius>0.05</radius><length>0.02</length></cylinder></geometry></visual>
+      <pose>0 -0.15 0.05 0 0 0</pose>
+      <inertial>
+        <mass>0.5</mass>
+        <inertia><ixx>0.001</ixx><iyy>0.001</iyy><izz>0.001</izz></inertia>
+      </inertial>
+      <collision name="col">
+        <pose>0 0 0 1.5707 0 0</pose>
+        <geometry><cylinder><radius>0.05</radius><length>0.02</length></cylinder></geometry>
+        <surface><friction><ode><mu>1.2</mu><mu2>1.2</mu2></ode></friction></surface>
+      </collision>
+      <visual name="vis">
+        <pose>0 0 0 1.5707 0 0</pose>
+        <geometry><cylinder><radius>0.05</radius><length>0.02</length></cylinder></geometry>
+        <material>
+          <ambient>0.9 0.9 0.9 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+          <emissive>0.02 0.02 0.02 1</emissive>
+          <pbr><metal><albedo>1 1 1 1</albedo><metalness>0.0</metalness><roughness>0.4</roughness></metal></pbr>
+        </material>
+      </visual>
     </link>
-    <!-- キャスタ（単純に床接触安定用。省略可） -->
+
+    <!-- caster（床安定用） -->
     <link name="caster">
       <pose>-0.15 0 0.03 0 0 0</pose>
       <inertial><mass>0.1</mass><inertia><ixx>1e-5</ixx><iyy>1e-5</iyy><izz>1e-5</izz></inertia></inertial>
@@ -44,22 +88,30 @@
       <visual name="vis"><geometry><sphere><radius>0.03</radius></sphere></geometry></visual>
     </link>
 
-    <!-- ジョイント -->
+    <!-- joints: Y軸回り -->
     <joint name="left_wheel_joint" type="revolute">
       <parent>base_link</parent><child>left_wheel</child>
       <pose>0 0 0 0 0 0</pose>
-      <axis><xyz>0 1 0</xyz><limit><lower>-1e16</lower><upper>1e16</upper></limit></axis>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <limit><lower>-1e16</lower><upper>1e16</upper></limit>
+        <dynamics><damping>0.05</damping></dynamics>
+      </axis>
     </joint>
     <joint name="right_wheel_joint" type="revolute">
       <parent>base_link</parent><child>right_wheel</child>
       <pose>0 0 0 0 0 0</pose>
-      <axis><xyz>0 1 0</xyz><limit><lower>-1e16</lower><upper>1e16</upper></limit></axis>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <limit><lower>-1e16</lower><upper>1e16</upper></limit>
+        <dynamics><damping>0.05</damping></dynamics>
+      </axis>
     </joint>
     <joint name="caster_joint" type="ball">
       <parent>base_link</parent><child>caster</child>
     </joint>
 
-    <!-- 差動駆動プラグイン（Ignition/Gazebo Harmonic） -->
+    <!-- DiffDrive -->
     <plugin
       filename="ignition-gazebo-diff-drive-system"
       name="ignition::gazebo::systems::DiffDrive">
@@ -67,7 +119,7 @@
       <right_joint>right_wheel_joint</right_joint>
       <wheel_separation>0.30</wheel_separation>
       <wheel_radius>0.05</wheel_radius>
-      <topic>cmd_vel</topic> <!-- Gazebo 側のローカルトピック -->
+      <topic>cmd_vel</topic>           <!-- GZ側: /model/diffbot/cmd_vel -->
       <odom_topic>odometry</odom_topic>
       <odom_frame>odom</odom_frame>
       <robot_base_frame>base_link</robot_base_frame>
@@ -77,7 +129,7 @@
       <use_velocity_commands>true</use_velocity_commands>
     </plugin>
 
-    <!-- Odometry 発行（上のDiffDriveでも出ますが冗長に保険で） -->
+    <!-- Odometry（保険） -->
     <plugin
       filename="ignition-gazebo-odometry-publisher-system"
       name="ignition::gazebo::systems::OdometryPublisher">
