@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <!--
+    This model defines a simple red sphere with a radius of 3 cm (0.03 m).
+    It is used as a visual indicator for Cs‑137 sources in the Gazebo world.
+  -->
+  <model name="cs137_sphere">
+    <static>true</static>
+    <link name="sphere_link">
+      <visual name="sphere_visual">
+        <geometry>
+          <sphere>
+            <radius>0.03</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <!-- Pure red colour -->
+          <ambient>1 0 0 1</ambient>
+          <diffuse>1 0 0 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+          <emissive>0.2 0 0 1</emissive>
+        </material>
+      </visual>
+      <collision name="sphere_collision">
+        <geometry>
+          <sphere>
+            <radius>0.03</radius>
+          </sphere>
+        </geometry>
+      </collision>
+    </link>
+  </model>
+</sdf>

@@ -32,6 +32,7 @@ setup(
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
+            'source_spawner_node = source_spawner_node:main',
             'robot_measurement_node = g4_bringup.robot_measurement_node:main',
         ],
     },
