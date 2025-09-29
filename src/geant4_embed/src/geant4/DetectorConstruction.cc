@@ -41,13 +41,21 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
 
     // --- Non-directional detector: spherical volume ---
     // Use a realistic scintillator material (NaI(Tl)) for Cs‑137 gamma detection.
-    double detRadius     = 0.05 * m;               // 5 cm radius detector crystal
-    double shieldThickness = 0.01 * m;             // 1 cm thick shielding
+    // 5 cm 半径の NaI(Tl) 検出器に鉛製の 1/8 球殻遮蔽体を付加
+    double detRadius      = 0.05 * m;     // 検出器半径5 cm
+    // Cs-137のTVLに基づき22 mmの鉛を使用:contentReference[oaicite:4]{index=4}
+    double shieldThickness = 0.022 * m;   
     auto detMat          = nist->FindOrBuildMaterial("G4_SODIUM_IODIDE");
     // Detector sphere covering full 4π steradians
     auto solidDet        = new G4Sphere("DetSphere", 0.0, detRadius,
                                         0.0 * deg, 360.0 * deg,
                                         0.0 * deg, 180.0 * deg);
+
+    auto solidShield = new G4Sphere("ShieldShell",
+                                    detRadius,
+                                    detRadius + shieldThickness,
+                                    0.0 * deg, 90.0 * deg,   // φ: 0–90°
+                                    0.0 * deg, 90.0 * deg);  // θ: 0–90°
     fLogicDet            = new G4LogicalVolume(solidDet, detMat, "DetLV");
     fDetPV               = new G4PVPlacement(nullptr, G4ThreeVector(), fLogicDet, "DetPV", logicWorld, false, 0, true);
 
