@@ -7,49 +7,57 @@
 #include <G4PhysListFactory.hh>
 #include <G4UImanager.hh>
 #include <G4SystemOfUnits.hh>
+#include <G4DecayPhysics.hh>
+#include <G4RadioactiveDecayPhysics.hh>
 
 #include <numeric>
 #include <vector>
 
 /**
- * @brief 測定を実行する実装
+ * @brief Perform a measurement by running a specified number of Geant4 events.
  *
- * 新しい RunManager を生成し、DetectorConstruction・PhysicsList・ActionInitialization
- * をセットアップして初期化後、ジオメトリを再配置し指定回数のイベントを実行する。
+ * A new run manager is created for each measurement.  The detector is
+ * constructed, the physics list (FTFP_BERT plus radioactive decay) is
+ * initialized, and the action initialization sets up the primary generator
+ * (Cs‑137 decay) and event action.  The detector geometry is then updated
+ * according to the supplied position and shield angle, and the specified
+ * number of events is executed.  The energy deposited in the detector is
+ * accumulated and returned as the mean and variance.
  */
 MeasurementResult performMeasurement(const G4ThreeVector& detectorPos,
                                      double shieldAngleDeg,
                                      long numEvents)
 {
-  // RunManager の生成（シリアル実行）
+  // Create a serial run manager
   auto* runManager = G4RunManagerFactory::CreateRunManager(G4RunManagerType::Serial);
 
-  // Detector
+  // Detector geometry
   auto* det = new DetectorConstruction();
   runManager->SetUserInitialization(det);
 
-  // PhysicsList
+  // Physics list: FTFP_BERT with decay and radioactive decay
   G4PhysListFactory factory;
   auto phys = factory.GetReferencePhysList("FTFP_BERT");
+  phys->RegisterPhysics(new G4DecayPhysics());
+  phys->RegisterPhysics(new G4RadioactiveDecayPhysics());
   runManager->SetUserInitialization(phys);
 
-  // ActionInitialization
+  // Action initialization
   runManager->SetUserInitialization(new ActionInitialization());
 
-  // 初期化
+  // Initialize and suppress verbose output
   runManager->Initialize();
-
-  // 詳細出力を抑制
   auto* UI = G4UImanager::GetUIpointer();
   UI->ApplyCommand("/run/verbose 0");
   UI->ApplyCommand("/event/verbose 0");
   UI->ApplyCommand("/tracking/verbose 0");
   UI->ApplyCommand("/process/verbose 0");
+  UI->ApplyCommand("/process/had/rdm/thresholdForVeryLongDecayTime 1.0e+60 year");
 
-  // 検出器位置と遮蔽体角度を更新
+  // Update detector position and shield angle
   det->UpdateGeometry(detectorPos, shieldAngleDeg);
 
-  // イベント実行と測定結果の収集
+  // Collect energy deposits
   std::vector<double> edeps;
   edeps.reserve(static_cast<std::size_t>(numEvents));
 
@@ -59,7 +67,7 @@ MeasurementResult performMeasurement(const G4ThreeVector& detectorPos,
     edeps.push_back(edep);
   }
 
-  // 統計計算
+  // Compute mean and variance
   double sum = std::accumulate(edeps.begin(), edeps.end(), 0.0);
   double mean = numEvents > 0 ? (sum / static_cast<double>(numEvents)) : 0.0;
   double var  = 0.0;
@@ -71,8 +79,6 @@ MeasurementResult performMeasurement(const G4ThreeVector& detectorPos,
     var /= static_cast<double>(numEvents);
   }
 
-  // RunManager の解放
   delete runManager;
-
   return { numEvents, mean, var };
 }
