@@ -136,14 +136,15 @@ def _opaque_setup(context, *args, **kwargs):
         name='ros_gz_bridge',
         output='screen',
         arguments=[
-            '/model/diffbot_main/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
-            '/model/diffbot_main/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
-   ],
+            '/model/diffbot_main/odometry@nav_msgs/msg/Odometry@gz.msgs.Odometry',
+            '/model/diffbot_main/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
+        ],
         remappings=[
-            ('/model/diffbot_main/cmd_vel', '/cmd_vel'),
             ('/model/diffbot_main/odometry', '/odom'),
+            ('/cmd_vel', '/model/diffbot_main/cmd_vel'),
         ],
     )
+
 
     # Geant4 パラメータ
     src_pos = _parse_float_list_str(LC('source_position')) or [0.0, 0.0, 0.0]
