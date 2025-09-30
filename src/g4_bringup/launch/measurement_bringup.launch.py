@@ -137,13 +137,11 @@ def _opaque_setup(context, *args, **kwargs):
         output='screen',
         arguments=[
             '/model/diffbot_main/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
-            '/model/diffbot_main/odometry_with_covariance@nav_msgs/msg/Odometry[gz.msgs.OdometryWithCovariance',
             '/model/diffbot_main/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
    ],
         remappings=[
             ('/model/diffbot_main/cmd_vel', '/cmd_vel'),
             ('/model/diffbot_main/odometry', '/odom'),
-            ('/model/diffbot_main/odometry_with_covariance', '/odom'),
         ],
     )
 
