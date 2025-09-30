@@ -22,6 +22,7 @@ include_directories(
 add_executable(geant4_embed_node
   src/main.cpp
   src/sim_shared.cpp
+  src/sim_shared_multi.cpp
   src/odom_subscriber.cpp
   src/geant4/DetectorConstruction.cc
   src/geant4/ActionInitialization.cc

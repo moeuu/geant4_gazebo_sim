@@ -62,7 +62,7 @@ OdomSubscriber::OdomSubscriber()
   // Read multi‑source positions.  This parameter should be a flat list of
   // numbers whose length is a multiple of three (x,y,z per source).  If the
   // length is zero or not divisible by three, fallback to single source.
-  auto src_positions = this->declare_parameter<std::vector<double>>("source.positions", {});
+  auto src_positions = this->declare_parameter<std::vector<double>>("source.positions", std::vector<double>{});
   if (!src_positions.empty() && src_positions.size() % 3 == 0) {
     // Clear the global sources and repopulate
     g_sources.clear();
@@ -82,7 +82,7 @@ OdomSubscriber::OdomSubscriber()
 
   // Read per‑source intensities.  If provided and length matches the number
   // of sources, store them; otherwise, ignore and rely on g_source_intensity.
-  auto src_intensities = this->declare_parameter<std::vector<double>>("source.intensities", {});
+  auto src_intensities = this->declare_parameter<std::vector<double>>("source.intensities", std::vector<double>{});
   if (!g_sources.empty() && !src_intensities.empty()) {
     g_source_intensities = src_intensities;
   }

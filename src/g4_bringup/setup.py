@@ -34,6 +34,7 @@ setup(
         'console_scripts': [
             'source_spawner_node = source_spawner_node:main',
             'robot_measurement_node = g4_bringup.robot_measurement_node:main',
+            'measurement_sweep = measurement_sweep:main',
         ],
     },
 )

@@ -5,8 +5,6 @@
 // position is a triple of (x,y,z) coordinates in metres.  See
 // sim_shared_multi.cpp for definitions.
 
-#pragma once
-
 #include <atomic>
 #include <array>
 #include <vector>
