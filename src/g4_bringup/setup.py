@@ -32,9 +32,9 @@ setup(
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
-            'source_spawner_node = source_spawner_node:main',
             'robot_measurement_node = g4_bringup.robot_measurement_node:main',
-            'measurement_sweep = measurement_sweep:main',
+            'source_spawner_node = g4_bringup.source_spawner_node:main',
+            'measurement_sweep = g4_bringup.measurement_sweep:main',  # 追加
         ],
     },
 )

@@ -136,16 +136,14 @@ def _opaque_setup(context, *args, **kwargs):
         name='ros_gz_bridge',
         output='screen',
         arguments=[
-            '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
-            '/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V',
-            '/model/diffbot/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
-            '/model/diffbot/odometry_with_covariance@nav_msgs/msg/Odometry[gz.msgs.OdometryWithCovariance',
-            '/model/diffbot/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
-        ],
+            '/model/diffbot_main/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+            '/model/diffbot_main/odometry_with_covariance@nav_msgs/msg/Odometry[gz.msgs.OdometryWithCovariance',
+            '/model/diffbot_main/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
+   ],
         remappings=[
-            ('/model/diffbot/cmd_vel', '/cmd_vel'),
-            ('/model/diffbot/odometry', '/odom'),
-            ('/model/diffbot/odometry_with_covariance', '/odom'),
+            ('/model/diffbot_main/cmd_vel', '/cmd_vel'),
+            ('/model/diffbot_main/odometry', '/odom'),
+            ('/model/diffbot_main/odometry_with_covariance', '/odom'),
         ],
     )
 
