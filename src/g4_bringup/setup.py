@@ -35,6 +35,7 @@ setup(
             'robot_measurement_node = g4_bringup.robot_measurement_node:main',
             'source_spawner_node = g4_bringup.source_spawner_node:main',
             'measurement_sweep = g4_bringup.measurement_sweep:main',  # 追加
+            'measurement_sweep_edep = g4_bringup.measurement_sweep_edep:main',
         ],
     },
 )
