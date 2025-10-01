@@ -39,7 +39,6 @@ from launch.substitutions import LaunchConfiguration, TextSubstitution
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
-
 # ---------- utils ----------
 
 def _arg(name: str, default: str, desc: str = ""):
@@ -97,12 +96,12 @@ def _opaque_setup(context, *args, **kwargs):
 
     # Gazebo
     gz_server = ExecuteProcess(
-    cmd=['gz', 'sim', '-r', '-s', '-v', '4', world],
-    output='screen',
+        cmd=['gz', 'sim', '-r', '-s', '-v', '4', world],
+        output='screen',
     )
 
     gz_gui = ExecuteProcess(
-        cmd=['gz', 'sim', '-g', '-v', '4'],   # ← ここに world を渡さない
+        cmd=['gz', 'sim', '-g', '-v', '4'],   # world は GUI プロセスには渡さない
         output='screen',
         condition=UnlessCondition(LaunchConfiguration('headless')),
     )
@@ -128,23 +127,22 @@ def _opaque_setup(context, *args, **kwargs):
     )
 
     # ros_gz_bridge
-    # GZ->ROS: /clock, /tf, /odometry は '[' で片方向
-    # ROS->GZ: /cmd_vel は ']' で片方向
+    # GZ->ROS: /odometry は '[' で片方向
+    # ROS->GZ: /cmd_vel は ']' で片方向（Twist → gz.msgs.Twist）
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
         name='ros_gz_bridge',
         output='screen',
         arguments=[
-            '/model/turtlebot3_burger/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry',
-            '/model/turtlebot3_burger/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
+            '/model/diffbot/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+            '/model/diffbot/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
         ],
         remappings=[
-            ('/model/turtlebot3_burger/odom', '/odom'),
-            ('/cmd_vel', '/model/turtlebot3_burger/cmd_vel'),
+            ('/model/diffbot/odometry', '/odom'),
+            ('/cmd_vel', '/model/diffbot/cmd_vel'),
         ],
     )
-
 
     # Geant4 パラメータ
     src_pos = _parse_float_list_str(LC('source_position')) or [0.0, 0.0, 0.0]

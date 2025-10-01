@@ -81,10 +81,6 @@
       </link>
     </model>
 
-    <!-- diffbot（位置は元のまま） -->
-    <include name="turtlebot3_burger">
-      <uri>model://turtlebot3_burger</uri>
-      <pose>2 2 2 0 0 0</pose>
-    </include>
+
   </world>
 </sdf>

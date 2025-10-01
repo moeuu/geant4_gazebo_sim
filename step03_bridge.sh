@@ -13,20 +13,20 @@ set -u
 # -------------------------------------------------------------------------------
 
 # 1) /cmd_vel: ROS(geometry_msgs/Twist) <-> GZ(gz.msgs.Twist)
-#    ROSの /cmd_vel を GZ の /model/diffbot/cmd_vel にリマップ
+#    ROSの /cmd_vel を GZ の /model/turtlebot3_burger/cmd_vel にリマップ
 ros2 run ros_gz_bridge parameter_bridge \
-  /model/diffbot/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist \
-  --ros-args -r /model/diffbot/cmd_vel:=/cmd_vel &
+  /model/turtlebot3_burger/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist \
+  --ros-args -r /model/turtlebot3_burger/cmd_vel:=/cmd_vel &
 BRIDGE1=$!
 echo "[*] BRIDGE1 (cmd_vel) PID=$BRIDGE1"
 
 # 2) /odom: GZ(gz.msgs.Odometry) <-> ROS(nav_msgs/Odometry)
-#    GZの /model/diffbot/odometry を ROS の /odom にリマップ
+#    GZの /model/turtlebot3_burger/odom を ROS の /odom にリマップ
 ros2 run ros_gz_bridge parameter_bridge \
-  /model/diffbot/odometry@nav_msgs/msg/Odometry@gz.msgs.Odometry \
-  --ros-args -r /model/diffbot/odometry:=/odom &
+  /model/turtlebot3_burger/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry \
+  --ros-args -r /model/turtlebot3_burger/odom:=/odom &
 BRIDGE2=$!
-echo "[*] BRIDGE2 (odometry->odom) PID=$BRIDGE2"
+echo "[*] BRIDGE2 (odom->odom) PID=$BRIDGE2"
 
 cleanup() {
   echo; echo "[*] 停止処理: kill $BRIDGE1 $BRIDGE2"
@@ -36,4 +36,3 @@ cleanup() {
 trap cleanup INT TERM
 
 wait
-

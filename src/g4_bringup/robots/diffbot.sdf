@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <sdf version="1.9">
   <model name="diffbot">
-    <pose>0 0 0.05 0 0 0</pose>
+    <pose>10.0 5.0 2.0 0 0 0</pose>
 
     <!-- base: 底が地面に触れないよう中心を z=0.16 に上げる（底=0.06m） -->
     <link name="base_link">
