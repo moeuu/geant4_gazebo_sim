@@ -136,12 +136,12 @@ def _opaque_setup(context, *args, **kwargs):
         name='ros_gz_bridge',
         output='screen',
         arguments=[
-            '/model/diffbot_main/odometry@nav_msgs/msg/Odometry@gz.msgs.Odometry',
-            '/model/diffbot_main/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
+            '/model/turtlebot3_burger/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry',
+            '/model/turtlebot3_burger/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
         ],
         remappings=[
-            ('/model/diffbot_main/odometry', '/odom'),
-            ('/cmd_vel', '/model/diffbot_main/cmd_vel'),
+            ('/model/turtlebot3_burger/odom', '/odom'),
+            ('/cmd_vel', '/model/turtlebot3_burger/cmd_vel'),
         ],
     )
 

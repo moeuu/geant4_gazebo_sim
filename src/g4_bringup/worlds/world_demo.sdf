@@ -82,9 +82,8 @@
     </model>
 
     <!-- diffbot（位置は元のまま） -->
-    <include>
-      <uri>file:///home/morita/g4_ros_ws/src/g4_bringup/robots/diffbot.sdf</uri>
-      <name>diffbot_main</name>
+    <include name="turtlebot3_burger">
+      <uri>model://turtlebot3_burger</uri>
       <pose>2 2 2 0 0 0</pose>
     </include>
   </world>
